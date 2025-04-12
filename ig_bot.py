@@ -1,20 +1,27 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 import subprocess
+from dotenv import load_dotenv
 import os
 import re
 import glob
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Halo! Kirim link Instagram ke sini, nanti aku kirim balik isinya.")
+    await update.message.reply_text(
+        "Halo! Kirim link Instagram ke sini, nanti aku kirim balik isinya.")
+
 
 def is_instagram_url(url):
-    return re.match(r'https?://(www\.)?instagram\.com/(p|reel|tv)/[\w\-]+', url)
+    return re.match(r'https?://(www\.)?instagram\.com/(p|reel|tv)/[\w\-]+',
+                    url)
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message.text.strip()
     if is_instagram_url(message):
-        await update.message.reply_text("Tunggu sebentar, sedang didownload...")
+        await update.message.reply_text("Tunggu sebentar, sedang didownload..."
+                                        )
 
         try:
             output_template = "ig_content_%(autonumber)s.%(ext)s"
@@ -35,15 +42,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"Error saat download: {e}")
     else:
-        await update.message.reply_text("Kirim link postingan Instagram yang valid.")
+        await update.message.reply_text(
+            "Kirim link postingan Instagram yang valid.")
+
 
 if __name__ == "__main__":
-    import os
+    from dotenv import load_dotenv
+    load_dotenv()  # <-- WAJIB ditaruh sebelum os.getenv
+
     TOKEN = os.getenv("BOT_TOKEN")
+    if not TOKEN:
+        raise ValueError("BOT_TOKEN tidak ditemukan di .env")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot aktif...")
     app.run_polling()
