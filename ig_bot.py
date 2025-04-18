@@ -1,64 +1,57 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-import subprocess
-from dotenv import load_dotenv
+from instaloader import Instaloader, Post
 import os
 import re
-import glob
+from dotenv import load_dotenv
 
+load_dotenv()
+
+INSTAGRAM_USERNAME = os.getenv("IG_USERNAME")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Init instaloader
+loader = Instaloader()
+loader.load_session_from_file(INSTAGRAM_USERNAME, f"session-{INSTAGRAM_USERNAME}")
+
+def extract_shortcode(url):
+    match = re.search(r'/p/([^/?]+)|/reel/([^/?]+)|/tv/([^/?]+)', url)
+    return next((group for group in match.groups() if group), None)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Halo! Kirim link Instagram ke sini, nanti aku kirim balik isinya.")
+    await update.message.reply_text("Kirim link postingan Instagram, nanti aku kirim balik medianya!")
 
+async def handle_instagram(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+    shortcode = extract_shortcode(url)
+    if not shortcode:
+        await update.message.reply_text("Link tidak valid.")
+        return
 
-def is_instagram_url(url):
-    return re.match(r'https?://(www\.)?instagram\.com/(p|reel|tv)/[\w\-]+',
-                    url)
+    try:
+        post = Post.from_shortcode(loader.context, shortcode)
+        await update.message.reply_text("Mendapatkan media...")
 
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message.text.strip()
-    if is_instagram_url(message):
-        await update.message.reply_text("Tunggu sebentar, sedang didownload..."
-                                        )
-
-        try:
-            output_template = "ig_content_%(autonumber)s.%(ext)s"
-            cmd = ["yt-dlp", "-o", output_template, message]
-            subprocess.run(cmd, check=True)
-
-            files = sorted(glob.glob("ig_content_*"))
-            if not files:
-                await update.message.reply_text("Tidak ditemukan media.")
-                return
-
-            for file in files:
-                if file.endswith(".mp4"):
-                    await update.message.reply_video(video=open(file, 'rb'))
+        if post.typename == "GraphSidecar":  # carousel
+            for node in post.get_sidecar_nodes():
+                if node.is_video:
+                    await update.message.reply_video(video=node.video_url)
                 else:
-                    await update.message.reply_photo(photo=open(file, 'rb'))
-                os.remove(file)
-        except Exception as e:
-            await update.message.reply_text(f"Error saat download: {e}")
-    else:
-        await update.message.reply_text(
-            "Kirim link postingan Instagram yang valid.")
+                    await update.message.reply_photo(photo=node.display_url)
+        else:
+            if post.is_video:
+                await update.message.reply_video(video=post.video_url)
+            else:
+                await update.message.reply_photo(photo=post.url)
 
+    except Exception as e:
+        await update.message.reply_text(f"Gagal download: {e}")
 
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-    load_dotenv()  # <-- WAJIB ditaruh sebelum os.getenv
-
-    TOKEN = os.getenv("BOT_TOKEN")
-    if not TOKEN:
-        raise ValueError("BOT_TOKEN tidak ditemukan di .env")
-
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_instagram))
 
-    print("Bot aktif...")
+    print("Bot aktif menggunakan Instaloader...")
     app.run_polling()
